@@ -66,6 +66,10 @@
 
 <section id="situation" class="on">
   <div class="card">
+    <h2>Chronologie</h2>
+    <ul class="story" id="timeline"></ul>
+  </div>
+  <div class="card">
     <h2>Les parties</h2>
     <div class="who" id="who"></div>
   </div>
@@ -122,11 +126,24 @@
 </main>
 <script>
 const PARTIES = [
-  {n:"Nzo", d:"Retiré du staff sans être prévenu. A crié sur Spock en vocal puis quitté. Argumente point par point en public."},
-  {n:"ZePunisher", d:"Fondateur. Reproche manque de présence/d'aide. A tout déballé en public avec « con et aigri »."},
-  {n:"Spock", d:"Co-fondateur. Visé par le cri. Reconnaît ses propres torts, dit l'affaire close… puis relance."},
-  {n:"Salahaddin", d:"Témoin direct du vocal. Contredit la version de Nzo (« il n'y avait pas de blanc »)."},
-  {n:"Toi (Louis)", d:"Tiers neutre. A proposé un vote ou un vocal tranquille."}
+  {n:"Nzo", d:"Retiré du staff sans être prévenu. A fini par reconnaître le cri (« j'aurais pas dû gueuler ») en invoquant la pression. S'en est pris à Salahaddin. Attend toujours la date du vocal manqué."},
+  {n:"ZePunisher", d:"Fondateur. A tout déballé en public avec « con et aigri ». Ne répond plus aux relances de Nzo sur la date du vocal."},
+  {n:"Spock", d:"Co-fondateur. Visé par le cri. Précise que sa remarque visait tout le monde, puis recentre sur un terrain commun (la communauté qui change)."},
+  {n:"Salahaddin", d:"Témoin direct du vocal. « Tu te ridiculises », traité de « suceur » par Nzo, puis se retire de la discussion."},
+  {n:"Théo", d:"Membre. Confirme que les gens réclament Spock faute de réponse. Ramène la discussion vers la 3D."},
+  {n:"Toi (Louis)", d:"Tiers neutre. A proposé un vote ou un vocal tranquille. « Ça stream à l'écrit »."}
+];
+
+const TIMELINE = [
+  {h:"Avant", t:"Discussion Nzo/Spock sur les coupures de parole et les « Spock Spock Spock ! »."},
+  {h:"Incident", t:"En vocal, Spock : « les gars évitez de parler tous en même temps ». Nzo le prend pour lui, crie, rage-quit."},
+  {h:"Plus tard", t:"Nzo retiré du staff par les autres membres, sans être prévenu. Vocal de discussion manqué."},
+  {h:"19h20", t:"Nzo demande à être tenu au courant. ZePunisher répond en public (« con et aigri », manque de présence…)."},
+  {h:"21h07–21h44", t:"Spock donne sa version, Nzo conteste les détails, Salahaddin confirme la version de Spock."},
+  {h:"21h46–21h52", t:"Nzo menace d'être « méchant » avec Salahaddin, parle de « suçage ». Salahaddin se retire."},
+  {h:"21h49", t:"Nzo reconnaît : « j'aurais pas dû gueuler, mais la pression… ». Premier aveu explicite."},
+  {h:"21h54", t:"Spock précise sa phrase exacte, non ciblée. Nzo : « si tu le dis »."},
+  {h:"21h58–22h08", t:"Désescalade : Spock, Nzo et Théo se retrouvent sur la nostalgie de la 3D d'avant et les nouveaux moins autodidactes. ZePunisher toujours silencieux."}
 ];
 
 const GRIEFS = [
@@ -139,7 +156,11 @@ const GRIEFS = [
   {id:"g7", t:"Déballage public après avoir dit « t'es sûr de t'afficher ? »", c:"ZePunisher"},
   {id:"g8", t:"« Tu te ridiculises » après avoir déclaré l'affaire close", c:"Spock"},
   {id:"g9", t:"Spock coupe aussi la parole (selon Nzo)", c:"Spock"},
-  {id:"g10", t:"Rendez-vous vocal manqué (versions contradictoires)", c:"Tous"}
+  {id:"g10", t:"Rendez-vous vocal manqué (versions contradictoires)", c:"Tous"},
+  {id:"g11", t:"Nzo menace et insulte Salahaddin (« méchant », « suçage »)", c:"Nzo"},
+  {id:"g12", t:"« Tu te ridiculises un peu beaucoup » de Salahaddin", c:"Salahaddin"},
+  {id:"g13", t:"ZePunisher ne répond pas à la question sur la date du vocal", c:"ZePunisher"},
+  {id:"g14", t:"Nzo a pris pour lui une remarque adressée à tous", c:"Nzo"}
 ];
 
 // g = groupe exclusif (une seule option par groupe)
@@ -150,19 +171,26 @@ const ACTORS = [
     {id:"n3", g:"nz", l:"Continue d'argumenter en public", d:+25, s:"Nzo continue point par point : chaque message attire une réponse, d'autres membres s'en mêlent."},
     {id:"n4", g:"nz", l:"Quitte le serveur", d:+10, s:"Nzo part : le salon se calme mais la rancœur reste, et sa version circulera ailleurs."},
     {id:"n5", g:"nz", l:"Se tait, laisse retomber", d:-10, s:"Nzo arrête de répondre : le fil meurt, rien n'est réglé mais rien n'empire."},
-    {id:"n6", l:"Demande calmement des explications en privé", d:-10, s:"Nzo passe en MP pour comprendre le retrait : sa demande initiale (être prévenu) redevient audible."}
+    {id:"n7", g:"nz", l:"Reconnaît le cri en expliquant la pression", d:-15, s:"Nzo admet « j'aurais pas dû gueuler » en expliquant la pression : vrai pas en avant, même si le contexte ajouté passe un peu pour une justification."},
+    {id:"n6", l:"Demande calmement des explications en privé", d:-10, s:"Nzo passe en MP pour comprendre le retrait : sa demande initiale (être prévenu) redevient audible."},
+    {id:"n8", l:"S'excuse auprès de Salahaddin", d:-10, s:"Nzo retire le « suçage » : un front de moins, et ça montre qu'il sait reconnaître ses torts."},
+    {id:"n9", l:"S'en prend aux témoins", d:+10, s:"Nzo s'en prend aux témoins (« méchant », « suçage ») : il ouvre un nouveau conflit et perd le soutien des neutres."}
   ]},
   {n:"ZePunisher", o:[
     {id:"z1", l:"Retire le « con et aigri »", d:-15, s:"ZePunisher retire l'insulte : ça enlève à Nzo son meilleur argument et montre l'exemple."},
     {id:"z2", l:"Reconnaît qu'il aurait fallu prévenir Nzo", d:-15, s:"ZePunisher admet le défaut de communication sur le retrait : Nzo obtient ce qu'il demandait au départ."},
     {id:"z3", g:"zp", l:"Propose un vocal privé à date fixe", d:-20, s:"Un vocal privé avec date et heure est fixé : plus d'excuse « t'étais pas là »."},
     {id:"z4", g:"zp", l:"Continue en public", d:+15, s:"ZePunisher continue d'exposer les griefs en public : Nzo se sent humilié et se braque."},
-    {id:"z5", g:"zp", l:"Sanctionne (mute / ban)", d:+20, s:"Sanction : le conflit est coupé net mais Nzo et ses proches le vivront comme une injustice."}
+    {id:"z5", g:"zp", l:"Sanctionne (mute / ban)", d:+20, s:"Sanction : le conflit est coupé net mais Nzo et ses proches le vivront comme une injustice."},
+    {id:"z6", g:"zr", l:"Répond sur la date du vocal", d:-10, s:"ZePunisher donne la date et l'heure : la question de Nzo est close, plus de « t'étais pas là »."},
+    {id:"z7", g:"zr", l:"Reste silencieux", d:+5, s:"ZePunisher ne répond pas aux relances : Nzo y voit une fuite, la question reste ouverte."}
   ]},
   {n:"Spock", o:[
     {id:"s1", g:"sp", l:"Clôt vraiment, ne répond plus", d:-15, s:"Spock tient son « l'affaire est close » : moins de carburant pour la dispute."},
     {id:"s2", g:"sp", l:"Continue les longs messages", d:+15, s:"Spock relance avec de nouveaux pavés : chaque phrase devient un point à contester."},
-    {id:"s3", l:"Envoie un MP calme à Nzo", d:-15, s:"Spock envoie un MP calme rappelant qu'il ne lui en veut pas : la porte reste ouverte."}
+    {id:"s3", l:"Envoie un MP calme à Nzo", d:-15, s:"Spock envoie un MP calme rappelant qu'il ne lui en veut pas : la porte reste ouverte."},
+    {id:"s4", l:"Clarifie que la remarque n'était pas ciblée", d:-5, s:"Spock redonne sa phrase exacte, adressée à tous : ça lève une partie du malentendu."},
+    {id:"s5", l:"Recentre sur un terrain commun", d:-15, s:"Spock parle de ce qui les rassemble (la 3D d'avant, les nouveaux) : on repasse de « l'un contre l'autre » à « nous »."}
   ]},
   {n:"Autres membres", o:[
     {id:"o1", g:"ot", l:"Restent en dehors", d:-5, s:"Les autres membres laissent les concernés régler ça entre eux."},
@@ -182,7 +210,11 @@ const COMBOS = [
   {if:["n3","z4"], d:+10, s:"Escalade publique des deux côtés : le serveur entier est pris en otage."},
   {if:["n4","z5"], d:+15, s:"Rupture définitive : départ + sanction, aucun retour possible."},
   {if:["z3","l1"], d:-5, s:"Le vocal privé avec toi comme médiateur donne un cadre neutre crédible."},
-  {if:["n6","z2"], d:-5, s:"La question privée de Nzo reçoit une vraie réponse : le malentendu sur le retrait est levé."}
+  {if:["n6","z2"], d:-5, s:"La question privée de Nzo reçoit une vraie réponse : le malentendu sur le retrait est levé."},
+  {if:["n7","s5"], d:-10, s:"Terrain commun : après l'aveu, la frustration partagée sur l'évolution de la communauté rapproche Nzo et Spock."},
+  {if:["n7","s4"], d:-5, s:"Aveu + clarification : chacun comprend comment l'autre a vécu le moment."},
+  {if:["n9","o1"], d:-5, s:"Salahaddin se retire au lieu de répondre : l'accrochage ne dégénère pas."},
+  {if:["n1","z7"], d:+5, s:"Nzo fait le pas mais le staff ne répond pas : déséquilibre, risque qu'il se sente le seul à faire des efforts."}
 ];
 
 const CHECK = [
@@ -221,6 +253,7 @@ document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{
 });
 
 // Situation
+$("#timeline").innerHTML = TIMELINE.map(x=>`<li><b>${x.h}</b> — ${esc(x.t)}</li>`).join("");
 $("#who").innerHTML = PARTIES.map(p=>`<div><b>${p.n}</b>${esc(p.d)}</div>`).join("");
 function renderGriefs(){
   $("#griefs").innerHTML = GRIEFS.map(g=>`
@@ -275,10 +308,11 @@ function renderSim(){
   $("#outcome").innerHTML=`<b style="color:${r.out.c}">${r.out.l}</b><br>${r.out.x}`;
   $("#story").innerHTML = r.story.length
     ? r.story.map(x=>`<li>${esc(x.s)} <span class="delta ${x.d>0?"up":x.d<0?"down":"zero"}">(${x.d>0?"+":""}${x.d})</span></li>`).join("")
-    : `<li class="mut">Situation actuelle : fil public ouvert, personne n'a cédé. Coche des actions pour simuler la suite.</li>`;
+    : `<li class="mut">Aucune action cochée. Choisis un scénario rapide (ex. « Situation à 22h08 ») ou coche des actions pour simuler la suite.</li>`;
 }
 const PRESETS = [
-  {l:"Situation actuelle", s:[]},
+  {l:"Situation à 21h40", s:["n3","z4","s2","o2"]},
+  {l:"Situation à 22h08", s:["n7","n9","z7","s4","s5","o1"]},
   {l:"Scénario idéal", s:["n1","z1","z2","z3","s1","o1","l1"]},
   {l:"Ça continue en public", s:["n3","z4","s2","o2"]},
   {l:"Rupture", s:["n4","z5","o2"]},
