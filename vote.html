@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vote — conflit du serveur</title>
+<link rel="stylesheet" href="votes.css">
+</head>
+<body>
+<header>
+  <h1>🗳️ Vote</h1>
+  <nav><a href="vote.html" class="on">Voter</a><a href="rapport.html">Rapport live</a><a href="index.html">Simulateur</a></nav>
+</header>
+<main>
+  <div id="closed" class="notice hidden">Les votes sont fermés pour le moment. Tu peux consulter le <a href="rapport.html" style="color:inherit">rapport</a>.</div>
+  <div id="loading" class="card mut">Connexion…</div>
+
+  <form id="form" class="hidden">
+    <div class="notice">Ton pseudo et tes réponses apparaissent dans le rapport public. Un seul vote par pseudo : si tu revotes, ça remplace l'ancien.</div>
+
+    <div class="card">
+      <h2>Ton pseudo Discord *</h2>
+      <input type="text" id="pseudo" maxlength="32" placeholder="ex. Louis 84" required>
+    </div>
+
+    <div class="card">
+      <h2>1. Quelle suite tu souhaites ?</h2>
+      <div id="issues"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Pour toi, le conflit est réglé ?</h2>
+      <div id="etat"></div>
+    </div>
+
+    <div class="card">
+      <h2>3. Règles proposées pour le serveur</h2>
+      <p class="mut">Pour, neutre ou contre. Tu peux en laisser vides.</p>
+      <div id="regles"></div>
+    </div>
+
+    <div id="secPersonnes">
+      <div class="card">
+        <h2>4. Les reproches sont-ils fondés ?</h2>
+        <p class="mut">Facultatif. « ? » si tu ne sais pas.</p>
+        <div id="griefs"></div>
+      </div>
+      <div class="card">
+        <h2>5. Répartition des torts</h2>
+        <p class="mut">Facultatif. Laisse tout à 0 pour ne pas répondre. Les valeurs sont ramenées à 100 %.</p>
+        <div id="torts"></div>
+        <div class="mut" id="tortsPct" style="margin-top:6px"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Commentaire (facultatif)</h2>
+      <textarea id="comment" maxlength="400" placeholder="Reste respectueux, c'est public."></textarea>
+      <div class="btns">
+        <button class="btn pri" type="submit" id="send">Envoyer mon vote</button>
+        <button class="btn hidden" type="button" id="del">Retirer mon vote</button>
+      </div>
+      <div id="done" class="ok-box hidden"></div>
+      <div id="err" class="notice hidden" style="margin-top:10px"></div>
+    </div>
+  </form>
+</main>
+
+<script type="module">
+import { db, auth, ref, onValue, set, get, remove, serverTimestamp, signInAnonymously, onAuthStateChanged,
+  ISSUES, REGLES, ETAT, GRIEFS, PERSONNES, esc } from "./commun.js";
+
+const $ = s => document.querySelector(s);
+const state = { issue: null, regle: null, regles: {}, griefs: {}, torts: {} };
+let config = { open: true, personnes: true }, uid = null;
+
+const radio = (name, items, key) => items.map(i => `
+  <label class="opt"><input type="radio" name="${name}" value="${i.id}"><span>${esc(i.l)}</span></label>`).join("");
+$("#issues").innerHTML = radio("issue", ISSUES);
+$("#etat").innerHTML = radio("etat", ETAT);
+document.querySelectorAll("input[name=issue]").forEach(i => i.onchange = () => state.issue = i.value);
+document.querySelectorAll("input[name=etat]").forEach(i => i.onchange = () => state.regle = i.value);
+
+function seg(container, items, key, choices) {
+  $(container).innerHTML = items.map(g => `
+    <div class="q"><div>${esc(g.l || g.t)}${g.c ? ` <span class="tag">${esc(g.c)}</span>` : ""}</div>
+      <div class="seg">${choices.map(([v, l]) => `<button type="button" data-k="${g.id}" data-v="${v}">${l}</button>`).join("")}</div>
+    </div>`).join("");
+  $(container).querySelectorAll("button").forEach(b => b.onclick = () => {
+    const k = b.dataset.k, v = b.dataset.v;
+    state[key][k] = state[key][k] === v ? undefined : v;
+    if (!state[key][k]) delete state[key][k];
+    b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", state[key][k] === x.dataset.v));
+  });
+}
+seg("#regles", REGLES, "regles", [["pour", "Pour"], ["neutre", "Neutre"], ["contre", "Contre"]]);
+seg("#griefs", GRIEFS, "griefs", [["oui", "Fondé"], ["partiel", "En partie"], ["non", "Pas fondé"], ["nsp", "?"]]);
+
+$("#torts").innerHTML = PERSONNES.map(p => `
+  <div class="slider"><span>${esc(p.n)}</span><input type="range" min="0" max="10" value="0" data-p="${p.id}"><b id="tv-${p.id}">0</b></div>`).join("");
+function updTorts() {
+  const tot = PERSONNES.reduce((s, p) => s + (state.torts[p.id] || 0), 0);
+  PERSONNES.forEach(p => $("#tv-" + p.id).textContent = state.torts[p.id] || 0);
+  $("#tortsPct").textContent = tot ? "Soit : " + PERSONNES.map(p => `${p.n} ${Math.round((state.torts[p.id] || 0) / tot * 100)} %`).join(" · ") : "";
+}
+$("#torts").querySelectorAll("input").forEach(i => i.oninput = () => { state.torts[i.dataset.p] = +i.value; updTorts(); });
+
+function fill(v) {
+  $("#pseudo").value = v.pseudo || "";
+  $("#comment").value = v.comment || "";
+  if (v.issue) { state.issue = v.issue; const r = document.querySelector(`input[name=issue][value="${v.issue}"]`); if (r) r.checked = true; }
+  if (v.regle) { state.regle = v.regle; const r = document.querySelector(`input[name=etat][value="${v.regle}"]`); if (r) r.checked = true; }
+  for (const key of ["regles", "griefs"]) {
+    state[key] = { ...(v[key] || {}) };
+    document.querySelectorAll(`#${key} button`).forEach(b => b.classList.toggle("on", state[key][b.dataset.k] === b.dataset.v));
+  }
+  state.torts = { ...(v.torts || {}) };
+  $("#torts").querySelectorAll("input").forEach(i => i.value = state.torts[i.dataset.p] || 0);
+  updTorts();
+  $("#del").classList.remove("hidden");
+}
+
+function applyConfig() {
+  $("#closed").classList.toggle("hidden", config.open !== false);
+  $("#send").disabled = config.open === false;
+  $("#secPersonnes").classList.toggle("hidden", config.personnes === false);
+}
+onValue(ref(db, "config"), s => { config = { open: true, personnes: true, ...(s.val() || {}) }; applyConfig(); });
+
+onAuthStateChanged(auth, async user => {
+  if (!user) { signInAnonymously(auth).catch(e => { $("#loading").textContent = "Connexion impossible : " + e.message; }); return; }
+  uid = user.uid;
+  try {
+    const s = await get(ref(db, "votes/" + uid));
+    if (s.exists()) fill(s.val());
+    else { const saved = localStorage.getItem("vote-pseudo"); if (saved) $("#pseudo").value = saved; }
+  } catch (e) {}
+  $("#loading").classList.add("hidden");
+  $("#form").classList.remove("hidden");
+});
+
+$("#form").onsubmit = async e => {
+  e.preventDefault();
+  $("#err").classList.add("hidden"); $("#done").classList.add("hidden");
+  const pseudo = $("#pseudo").value.trim();
+  if (pseudo.length < 2) return showErr("Mets ton pseudo (2 caractères minimum).");
+  if (!state.issue && !state.regle && !Object.keys(state.regles).length) return showErr("Réponds au moins à une des questions 1 à 3.");
+  const v = { pseudo, ts: serverTimestamp() };
+  if (state.issue) v.issue = state.issue;
+  if (state.regle) v.regle = state.regle;
+  if (Object.keys(state.regles).length) v.regles = state.regles;
+  if (config.personnes !== false) {
+    if (Object.keys(state.griefs).length) v.griefs = state.griefs;
+    if (Object.values(state.torts).some(x => x > 0)) v.torts = state.torts;
+  }
+  const c = $("#comment").value.trim(); if (c) v.comment = c.slice(0, 400);
+  $("#send").disabled = true;
+  try {
+    await set(ref(db, "votes/" + uid), v);
+    try { localStorage.setItem("vote-pseudo", pseudo); } catch {}
+    $("#done").innerHTML = `Vote enregistré ✓ <a href="rapport.html" style="color:inherit">Voir le rapport en direct →</a>`;
+    $("#done").classList.remove("hidden");
+    $("#del").classList.remove("hidden");
+  } catch (err) { showErr("Envoi refusé : " + err.message); }
+  $("#send").disabled = config.open === false;
+};
+$("#del").onclick = async () => {
+  if ($("#del").dataset.armed !== "1") { $("#del").dataset.armed = "1"; $("#del").textContent = "Confirmer le retrait"; return; }
+  try { await remove(ref(db, "votes/" + uid)); location.reload(); } catch (err) { showErr(err.message); }
+};
+function showErr(m) { $("#err").textContent = m; $("#err").classList.remove("hidden"); }
+</script>
+</body>
+</html>

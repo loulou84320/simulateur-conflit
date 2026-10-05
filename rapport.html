@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rapport live — conflit du serveur</title>
+<link rel="stylesheet" href="votes.css">
+</head>
+<body>
+<header>
+  <h1>📊 Rapport <span class="live off" id="live">hors ligne</span></h1>
+  <nav><a href="vote.html">Voter</a><a href="rapport.html" class="on">Rapport live</a><a href="index.html">Simulateur</a></nav>
+</header>
+<main>
+  <div class="card">
+    <div class="kpis">
+      <div class="kpi"><b id="kN">0</b><span>votants</span></div>
+      <div class="kpi"><b id="kLast" style="font-size:15px;padding:4px 0">—</b><span>dernier vote</span></div>
+      <div class="kpi"><b id="kEtat">—</b><span>conflit réglé</span></div>
+    </div>
+    <div class="mut" id="closedInfo" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card summary">
+    <h2>Synthèse automatique</h2>
+    <div id="summary"></div>
+    <div class="btns"><button class="btn" id="copy">Copier le rapport (texte Discord)</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Suite souhaitée <span class="tag" id="issueVerdict"></span></h2>
+    <div id="issues"></div>
+  </div>
+
+  <div class="card">
+    <h2>Le conflit est-il réglé ?</h2>
+    <div class="legend"><span><i style="background:var(--ok)"></i>Oui</span><span><i style="background:var(--warn)"></i>En partie</span><span><i style="background:var(--bad)"></i>Non</span></div>
+    <div class="bar" id="etatBar" style="height:16px"></div>
+    <div class="mut" id="etatTxt" style="margin-top:6px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Règles proposées</h2>
+    <div class="legend"><span><i style="background:var(--ok)"></i>Pour</span><span><i style="background:#5a6072"></i>Neutre</span><span><i style="background:var(--bad)"></i>Contre</span></div>
+    <div id="regles"></div>
+  </div>
+
+  <div id="secPersonnes">
+    <div class="card">
+      <h2>Reproches <span class="tag" id="griefsN"></span></h2>
+      <div class="legend"><span><i style="background:var(--ok)"></i>Fondé</span><span><i style="background:var(--warn)"></i>En partie</span><span><i style="background:var(--bad)"></i>Pas fondé</span></div>
+      <div id="griefs"></div>
+    </div>
+    <div class="card">
+      <h2>Répartition des torts perçue <span class="tag" id="tortsN"></span></h2>
+      <div id="torts"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Commentaires</h2>
+    <div id="comments"></div>
+  </div>
+
+  <div class="card" id="adminCard">
+    <h2>Administration</h2>
+    <div id="adminOut">
+      <p class="mut">Réservé à l'organisateur.</p>
+      <button class="btn" id="login">Se connecter avec Google</button>
+    </div>
+    <div id="adminIn" class="hidden">
+      <p class="mut" id="who"></p>
+      <label class="opt"><input type="checkbox" id="cfgOpen"><span>Votes ouverts</span></label>
+      <label class="opt"><input type="checkbox" id="cfgPers"><span>Afficher la section « personnes » (reproches et torts)</span></label>
+      <h2 style="margin-top:12px">Votes enregistrés</h2>
+      <div id="adminVotes"></div>
+      <div class="btns"><button class="btn" id="logout">Se déconnecter</button></div>
+    </div>
+    <div id="adminErr" class="notice hidden" style="margin-top:8px"></div>
+  </div>
+</main>
+
+<script type="module">
+import { db, auth, ref, onValue, set, remove, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut,
+  ADMIN_EMAIL, analyze, esc, pct, timeAgo } from "./commun.js";
+
+const $ = s => document.querySelector(s);
+let raw = {}, config = { open: true, personnes: true }, R = null, isAdmin = false;
+
+// Le rapport est lisible sans connexion ; l'administration n'apparaît qu'avec ?admin
+if (!new URLSearchParams(location.search).has("admin")) $("#adminCard").classList.add("hidden");
+
+onValue(ref(db, ".info/connected"), s => {
+  const on = s.val() === true;
+  $("#live").className = "live" + (on ? "" : " off");
+  $("#live").textContent = on ? "en direct" : "hors ligne";
+});
+onValue(ref(db, "config"), s => { config = { open: true, personnes: true, ...(s.val() || {}) }; render(); });
+onValue(ref(db, "votes"), s => { raw = s.val() || {}; render(); }, e => { $("#summary").textContent = "Lecture impossible : " + e.message; });
+setInterval(() => R && ($("#kLast").textContent = timeAgo(R.last)), 30000);
+
+const stack = parts => parts.map(([p, c]) => `<i style="width:${(p * 100).toFixed(1)}%;background:${c}"></i>`).join("");
+const labCls = l => ({ "consensus": "consensus", "largement reconnu": "reconnu", "divise": "divise", "avis partagés": "partage", "rejet": "rejete", "largement rejeté": "rejete" }[l] || "neutre");
+
+function render() {
+  R = analyze(raw);
+  $("#kN").textContent = R.n;
+  $("#kLast").textContent = timeAgo(R.last);
+  $("#kEtat").textContent = R.etatScore === null ? "—" : pct(R.etatScore);
+  $("#closedInfo").textContent = config.open === false ? "🔒 Votes fermés — résultats figés." : "";
+  $("#summary").innerHTML = R.summary.map(p => `<p>${esc(p)}</p>`).join("");
+
+  $("#issueVerdict").textContent = R.issueVerdict || "";
+  $("#issues").innerHTML = R.issues.map((i, k) => `
+    <div class="row"><div class="top"><span>${esc(i.l)}</span><b>${i.c} · ${pct(i.p)}</b></div>
+    <div class="bar"><i style="width:${(i.p * 100).toFixed(1)}%;background:${k === 0 && i.c ? "var(--acc)" : "#4a5068"}"></i></div></div>`).join("");
+
+  const e = Object.fromEntries(R.etat.map(x => [x.id, x]));
+  $("#etatBar").innerHTML = R.eTot ? stack([[e.oui.p, "var(--ok)"], [e.partiel.p, "var(--warn)"], [e.non.p, "var(--bad)"]]) : "";
+  $("#etatTxt").textContent = R.eTot ? `Oui ${e.oui.c} · En partie ${e.partiel.c} · Non ${e.non.c}` : "Pas encore de réponse.";
+
+  $("#regles").innerHTML = R.regles.map(g => `
+    <div class="row"><div class="top"><span>${esc(g.l)}</span><span class="lab ${labCls(g.label)}">${g.label}${g.support !== null ? " " + pct(g.support) : ""}</span></div>
+    <div class="bar">${g.tot ? stack([[g.pour / g.tot, "var(--ok)"], [g.neutre / g.tot, "#5a6072"], [g.contre / g.tot, "var(--bad)"]]) : ""}</div>
+    <div class="mut" style="margin-top:3px">${g.pour} pour · ${g.neutre} neutre · ${g.contre} contre</div></div>`).join("");
+
+  const showP = config.personnes !== false;
+  $("#secPersonnes").classList.toggle("hidden", !showP);
+  if (showP) {
+    $("#griefsN").textContent = `${R.griefsVotants} votant${R.griefsVotants > 1 ? "s" : ""}`;
+    const sorted = [...R.griefs].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+    $("#griefs").innerHTML = sorted.map(g => `
+      <div class="row"><div class="top"><span>${esc(g.t)} <span class="tag">${esc(g.c)}</span></span><span class="lab ${labCls(g.label)}">${g.label}${g.score !== null ? " " + pct(g.score) : ""}</span></div>
+      <div class="bar">${g.rep ? stack([[g.oui / g.rep, "var(--ok)"], [g.partiel / g.rep, "var(--warn)"], [g.non / g.rep, "var(--bad)"]]) : ""}</div>
+      <div class="mut" style="margin-top:3px">${g.oui} fondé · ${g.partiel} en partie · ${g.non} pas fondé${g.nsp ? ` · ${g.nsp} ne sait pas` : ""}</div></div>`).join("");
+    $("#tortsN").textContent = `${R.tortsVotants} votant${R.tortsVotants > 1 ? "s" : ""}`;
+    $("#torts").innerHTML = R.tortsVotants ? R.torts.map(t => `
+      <div class="row"><div class="top"><span>${esc(t.n)}</span><b>${pct(t.p)}</b></div>
+      <div class="bar"><i style="width:${(t.p * 100).toFixed(1)}%;background:var(--acc)"></i></div></div>`).join("") : `<p class="mut">Pas encore de réponse.</p>`;
+  }
+
+  $("#comments").innerHTML = R.comments.length ? R.comments.map(c => `
+    <div class="comment"><b>${esc(c.pseudo)}</b> <span class="mut">${timeAgo(c.ts)}</span><br>${esc(c.t)}</div>`).join("") : `<p class="mut">Aucun commentaire.</p>`;
+
+  if (isAdmin) renderAdmin();
+}
+
+$("#copy").onclick = () => {
+  if (!R) return;
+  const L = ["**📊 Rapport des votes — conflit du serveur**", ""];
+  R.summary.forEach(p => L.push("• " + p));
+  L.push("", "**Suite souhaitée**");
+  R.issues.filter(i => i.c).forEach(i => L.push(`${pct(i.p)} — ${i.l} (${i.c})`));
+  L.push("", "**Règles**");
+  R.regles.filter(g => g.tot).forEach(g => L.push(`${g.label}${g.support !== null ? " " + pct(g.support) : ""} — ${g.l}`));
+  L.push("", location.href.replace(/\?.*$/, ""));
+  const txt = L.join("\n");
+  const ok = () => { $("#copy").textContent = "Copié ✓"; setTimeout(() => $("#copy").textContent = "Copier le rapport (texte Discord)", 1500); };
+  navigator.clipboard.writeText(txt).then(ok, () => {
+    const t = document.createElement("textarea"); t.value = txt; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); ok();
+  });
+};
+
+// --- Administration ---
+onAuthStateChanged(auth, u => {
+  isAdmin = !!(u && u.email === ADMIN_EMAIL);
+  $("#adminOut").classList.toggle("hidden", isAdmin);
+  $("#adminIn").classList.toggle("hidden", !isAdmin);
+  if (u && !u.isAnonymous && !isAdmin) adminErr(`Compte ${u.email} non autorisé.`);
+  if (isAdmin) { $("#who").textContent = "Connecté : " + u.email; renderAdmin(); }
+});
+$("#login").onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => adminErr(e.message));
+$("#logout").onclick = () => signOut(auth);
+$("#cfgOpen").onchange = e => set(ref(db, "config/open"), e.target.checked).catch(err => adminErr(err.message));
+$("#cfgPers").onchange = e => set(ref(db, "config/personnes"), e.target.checked).catch(err => adminErr(err.message));
+function renderAdmin() {
+  $("#cfgOpen").checked = config.open !== false;
+  $("#cfgPers").checked = config.personnes !== false;
+  const all = Object.entries(raw).map(([uid, v]) => ({ uid, ...v })).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  $("#adminVotes").innerHTML = all.length ? all.map(v => `
+    <div class="row" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span><b>${esc(v.pseudo)}</b> <span class="mut">${timeAgo(v.ts)}</span>${v.comment ? `<br><span class="mut">${esc(v.comment)}</span>` : ""}</span>
+      <button class="btn" data-del="${esc(v.uid)}" style="padding:6px 10px;font-size:13px">Supprimer</button></div>`).join("") : `<p class="mut">Aucun vote.</p>`;
+  $("#adminVotes").querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+    if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Confirmer"; return; }
+    remove(ref(db, "votes/" + b.dataset.del)).catch(e => adminErr(e.message));
+  });
+}
+function adminErr(m) { $("#adminErr").textContent = m; $("#adminErr").classList.remove("hidden"); }
+</script>
+</body>
+</html>
